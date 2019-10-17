@@ -71,6 +71,10 @@ def create_training_data(file_dir, incidents_csv, out_dir, top_features, past,
         ft_df = ft_df[['periodStart'] + top_features]
         # impute NaNs with 0
         ft_df = ft_df.fillna(0.)
+        # normalize values
+        for feature in top_features:
+            ft_df[feature] = (ft_df[feature] - ft_df[feature].min()) / (
+                    ft_df[feature].max() - ft_df[feature].min())
         # get all incidents with segment_ID
         inc_df_seg = inc_df.drop(
             inc_df.index[inc_df['Numerico_ID'] != segment_ID])
