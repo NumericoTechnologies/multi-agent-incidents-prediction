@@ -102,11 +102,23 @@ def create_training_data(file_dir, incidents_csv, out_dir, top_features, past,
                 writer.writerow(values)
 
 
+def csv_to_hdf5(file_dir, out_dir):
+    out_folder = os.path.join(out_dir, 'train_data_hdf5')
+    os.makedirs(out_folder, exist_ok=True)
+    segment_features = sorted([f for f in os.listdir(file_dir)])
+    print(f'Saving files in {out_folder}')
+    for features in segment_features:
+        df = csv_to_df(os.path.join(file_dir, features), sep='|', header=None)
+        df.to_hdf(os.path.join(out_folder, features[:-4] + '.h5'), 'data',
+                  mode='w', format='table')
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.formatter_class = argparse.ArgumentDefaultsHelpFormatter
     parser.add_argument('--function', required=True,
-                        choices=['filter_incidents', 'create_training_data'],
+                        choices=['filter_incidents', 'create_training_data',
+                                 'csv_to_hdf5'],
                         help='Select function for preprocessing')
     parser.add_argument('--out_dir', default='data/', type=str,
                         help='Output files directory')
@@ -127,3 +139,5 @@ if __name__ == '__main__':
         create_training_data(args.segments_feature_dir, args.incidents_csv,
                              args.out_dir, top_features_list, args.past,
                              args.future)
+    if args.function == 'csv_to_hdf5':
+        csv_to_hdf5(args.segments_feature_dir, args.out_dir)
