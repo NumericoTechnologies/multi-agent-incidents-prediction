@@ -1,0 +1,10 @@
+* text=auto
+
+# git files - have them with LF, as I edit them via the shell (echo etc)
+*.gitignore text eol=lf
+*.gitattributes text eol=lf
+
+# pycharm files are LF
+.idea/dictionaries/*.xml text=auto
+.idea/inspectionProfiles/*.xml text eol=lf
+.idea/* text eol=lf

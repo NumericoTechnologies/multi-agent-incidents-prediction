@@ -1,0 +1,10 @@
+*.pyc
+*.DS_Store
+
+# Pycharm settings
+.idea/
+# local Pycharm settings
+.idea/workspace.xml
+
+# data dir
+data/*
