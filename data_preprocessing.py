@@ -9,7 +9,7 @@ projects_dir = os.path.dirname(this_dir)
 if projects_dir not in sys.path: sys.path.append(projects_dir)
 
 from common_utils.general_utils import csv_to_df, df_to_csv
-from multi_agent_incidents_prediction import MultiAgentArgparser
+from multi_agent_incidents_prediction import MultiAgentArgparser, dropbox_join
 
 numerico_ids_list = [
     '284312011#284312008', '284312010', '282312031', '282312022', '282312021',
@@ -32,10 +32,9 @@ numerico_ids_list = [
     '276318051#275317063#275317060#276318023#277317005#276318043',
     '276318046#276318045']
 
-top_features_list = ['original_speed_min', 'diffx_speed_periodStart_max',
-                     'diffx_speed_specificLane_mean', 'diffx_speed_order_mean',
-                     'original_flow_mean', 'diffx_speed_order_max',
-                     'diffx_speed_specificLane_max']
+top_features_list = ['original_speed_min', 'original_speed_mean',
+                     'diffx_speed_order_mean', 'diffx_flow_periodStart_std',
+                     'diffx_flow_specificLane_mean']
 
 def filter_incidents(incidents_csv, out_dir, numerico_ids):
     df = csv_to_df(incidents_csv, sep='|',
@@ -56,6 +55,7 @@ def create_training_data(file_dir, incidents_csv, out_dir, top_features, past,
     out_folder = os.path.join(out_dir, 'train_data')
     os.makedirs(out_folder, exist_ok=True)
     segment_features = sorted([f for f in os.listdir(file_dir)])
+    print(f'Saving files in {out_folder}')
     inc_df = csv_to_df(incidents_csv, parse_dates=['starttime', 'stoptime'])
     for features in segment_features:
         segment_ID = features[:-13]
@@ -72,9 +72,14 @@ def create_training_data(file_dir, incidents_csv, out_dir, top_features, past,
         # get all incidents with segment_ID
         inc_df_seg = inc_df.drop(
             inc_df.index[inc_df['Numerico_ID'] != segment_ID])
-        with open(os.path.join(out_folder, segment_ID + '.csv'), 'w',
-                  newline='') as output:
-            writer = csv.writer(output, delimiter='|')
+        # get timestamp where to split into train & test data
+        test_split = ft_df.iloc[-1][0] - datetime.timedelta(weeks=12)
+        with open(os.path.join(out_folder, segment_ID + '_train.csv'), 'w',
+                  newline='') as train_output, \
+            open(os.path.join(out_folder, segment_ID + '_test.csv'), 'w',
+                 newline='') as test_output:
+            train_writer = csv.writer(train_output, delimiter='|')
+            test_writer = csv.writer(test_output, delimiter='|')
             for i in range(past - 1, len(ft_df)):
                 if i % 10000 == 0:
                     print(f'{datetime.datetime.now()}: {i} entries processed.')
@@ -93,7 +98,10 @@ def create_training_data(file_dir, incidents_csv, out_dir, top_features, past,
                     values.append(1.)
                 else:
                     values.append(0.)
-                writer.writerow(values)
+                if timestamp_min < test_split:
+                    train_writer.writerow(values)
+                else:
+                    test_writer.writerow(values)
 
 def csv_to_hdf5(file_dir, out_dir):
     out_folder = os.path.join(out_dir, 'train_data_hdf5')
@@ -113,6 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('--incidents_csv', type=str,
                         help='Path to incidents_csv')
     parser.add_argument('--segments_feature_dir', type=str,
+                        default=dropbox_join('train_data'),
                         help='Directory containing features of segments')
     parser.add_argument('--past', type=int, default=5,
                         help='data point consists of n past timestamps')
