@@ -10,17 +10,13 @@ import sys
 import datetime
 import h5py
 import torch.multiprocessing as multiprocessing
-import pandas as pd
 import numpy as np
+
+from common_utils.general_utils import csv_to_df
 
 this_dir = os.path.abspath(os.path.dirname(__file__))
 projects_dir = os.path.dirname(this_dir)
 if projects_dir not in sys.path: sys.path.append(projects_dir)
-
-adjacency_matrix = pd.DataFrame(
-    {'segments': ['278313080', '277315031', '277315032#277316021#277317004'],
-     '278313080': [0, 1, 0], '277315031': [1, 0, 1],
-     '277315032#277316021#277317004': [0, 1, 0]})
 
 
 class Net(nn.Module):
@@ -109,21 +105,32 @@ def network_iteration(segments_values, predictions, models, function,
 
 
 def agent_based_prediction(train_dir, test_dir, epochs, batch_size, lr,
-                           undersampling, undersampler_threshold, connected):
+                           undersampling, undersampler_threshold, connected,
+                           adjacency_matrix_csv):
     segment_features = sorted([f for f in os.listdir(train_dir)])
-    # define dictionaries for data, models & adjacent segments
+    # define dictionaries for data, models, adjacent segments ...
+    adjacency_matrix = csv_to_df(adjacency_matrix_csv, sep=',')
     models = dict()
     dataloaders_train = dict()
     dataloaders_test = dict()
     adjacent_segments = dict()
     criterion = nn.BCELoss()
 
+    # drop all segments in adjacent matrix where no dataset is available
+    segment_ids = list()
+    segment_ids.append('0')
+    for segment_id in segment_features:
+        segment_ids.append(segment_id[:-3])
+    adjacency_matrix = adjacency_matrix[segment_ids]
+    adjacency_matrix = adjacency_matrix[
+        adjacency_matrix['0'].isin(segment_ids)]
+
     # assign data loaders and models with respect to segments
     for segment in segment_features:
         segment_ID = segment[:-3]
         models[segment_ID] = Net()
         if connected:
-            adjacent_segments[segment_ID] = adjacency_matrix['segments'].where(
+            adjacent_segments[segment_ID] = adjacency_matrix['0'].where(
                 adjacency_matrix[segment_ID] == 1).dropna().tolist()
             models[segment_ID].fc1 = nn.Linear(
                 25 + 1, 100)
@@ -203,8 +210,10 @@ if __name__ == '__main__':
                         help='Apply undersampling to the datasets')
     parser.add_argument('--undersampler_threshold', default=100, type=int,
                         help='Threshold for undersampling of training data')
-    parser.add_argument('--connected', default=False, type=bool,
+    parser.add_argument('--connected', default=True, type=bool,
                         help='Network of Segments are training independently')
+    parser.add_argument('--adjacency_matrix_csv', required=True, type=str,
+                        help='csv adjacency matrix for Numerico segments')
     args = parser.parse_args()
     kwargs_ = dict(vars(args))
     agent_based_prediction(**kwargs_)
