@@ -12,6 +12,7 @@ import sys
 import datetime
 import random
 import h5py
+import csv
 import torch.multiprocessing as multiprocessing
 import numpy as np
 
@@ -125,9 +126,10 @@ def confusion(label, preds, inc_threshold):
     return true_positives, false_positives, true_negatives, false_negatives
 
 
-def agent_based_prediction(train_dir, test_dir, epochs, batch_size, lr,
-                           sampling, sampling_rate, inc_threshold, connected,
-                           adjacency_matrix_csv):
+def agent_based_prediction(train_dir, test_dir, out_dir, epochs, batch_size,
+                           lr, sampling, sampling_rate, inc_threshold,
+                           connected, adjacency_matrix_csv):
+    os.makedirs(out_dir, exist_ok=True)
     segment_features = sorted([f for f in os.listdir(train_dir)])
     # define dictionaries for data, models, adjacent segments ...
     adjacency_matrix = csv_to_df(adjacency_matrix_csv, sep=',')
@@ -170,72 +172,92 @@ def agent_based_prediction(train_dir, test_dir, epochs, batch_size, lr,
 
     # start of training & evaluating the networks
     for epoch in range(epochs):
-        print(f'Training Epoch {epoch}:')
-        predictions = dict(zip(adjacent_segments.keys(),
-                               [torch.tensor([[0.]] * batch_size)] * len(
-                                   segment_features)))
-        # training of the models
-        avg_list = list()
-        for idx, data in enumerate(zip(*dataloaders_train.values())):
-            if sampling:
-                num_ones = torch.stack([x[1] for x in data]).sum()
-                if num_ones == 0:
-                    if sampling_rate < random.uniform(0, 1):
-                        continue
-                avg = num_ones / batch_size
-                avg_list.append(avg)
-            segments_values = dict(zip(dataloaders_train.keys(), data))
-            predictions, loss = network_iteration(segments_values, predictions,
-                                                  models, single_training_step,
-                                                  adjacent_segments,
-                                                  connected, batch_size,
-                                                  criterion, lr)
-            print(f'{datetime.datetime.now()} | Epoch: {epoch}/{epochs} | '
-                  f'Iteration: {idx}/{iterations_train} | Loss: '
-                  f'{np.mean([*loss.values()])}')
-        print(f'Ratio of incident & non-incident: {np.mean(avg_list)}')
-        # testing of the models
-        print('-' * 100)
-        print(f'Evaluation Epoch {epoch}:')
-        cum_loss = list()
-        predictions = dict(zip(adjacent_segments.keys(),
-                               [torch.tensor([[0.]] * batch_size)] * len(
-                                   segment_features)))
-        # dict which stores confusion matrices for all segments
-        all_preds = dict()
-        all_labels = dict()
-        confusion_matrix = dict()
-        for segment_id in segment_ids[1:]:
-            all_preds[segment_id] = list()
-            all_labels[segment_id] = list()
-            confusion_matrix[segment_id] = [0, 0, 0, 0]
-        for idx, data in enumerate(zip(*dataloaders_test.values())):
-            segments_values = dict(zip(dataloaders_test.keys(), data))
-            predictions, loss = network_iteration(segments_values, predictions,
-                                                  models,
-                                                  single_evaluation_step,
-                                                  adjacent_segments, connected,
-                                                  batch_size, criterion,
-                                                  lr)
-            cum_loss.append([*loss.values()])
+        out_name = f'{datetime.datetime.now()}_epoch{epoch}_batchsize' \
+            f'{batch_size}_lr{lr}_sr{sampling_rate}_connected{connected}.csv'
+        with open(os.path.join(out_dir, out_name), 'w', newline='') as out:
+            writer = csv.writer(out, delimiter='|')
+            writer.writerow(['segment_id', 'type', 'count', 'auroc'])
+            print(f'Training Epoch {epoch}:')
+            predictions = dict(zip(adjacent_segments.keys(),
+                                   [torch.tensor([[0.]] * batch_size)] * len(
+                                       segment_features)))
+            # training of the models
+            avg_list = list()
+            for idx, data in enumerate(zip(*dataloaders_train.values())):
+                if sampling:
+                    num_ones = torch.stack([x[1] for x in data]).sum()
+                    if num_ones == 0:
+                        if sampling_rate < random.uniform(0, 1):
+                            continue
+                    avg = num_ones / batch_size
+                    avg_list.append(avg)
+                segments_values = dict(zip(dataloaders_train.keys(), data))
+                predictions, loss = network_iteration(segments_values,
+                                                      predictions, models,
+                                                      single_training_step,
+                                                      adjacent_segments,
+                                                      connected, batch_size,
+                                                      criterion, lr)
+                print(f'{datetime.datetime.now()} | Epoch: {epoch}/{epochs} | '
+                      f'Iteration: {idx}/{iterations_train} | Loss: '
+                      f'{np.mean([*loss.values()])}')
+            print(f'Ratio of incident & non-incident: {np.mean(avg_list)}')
+            # testing of the models
+            print('-' * 100)
+            print(f'Evaluation Epoch {epoch}:')
+            cum_loss = list()
+            predictions = dict(zip(adjacent_segments.keys(),
+                                   [torch.tensor([[0.]] * batch_size)] * len(
+                                       segment_features)))
+            # dict which stores confusion matrices for all segments
+            all_preds = dict()
+            all_labels = dict()
+            confusion_matrix = dict()
             for segment_id in segment_ids[1:]:
-                labels = segments_values[segment_id][1]
-                preds = predictions[segment_id]
-                all_preds[segment_id].append(preds)
-                all_labels[segment_id].append(labels)
-                tp, fp, tn, fn, = confusion(labels, preds, inc_threshold)
-                confusion_matrix[segment_id] = np.add(
-                    confusion_matrix[segment_id], [tp, fp, tn, fn]).tolist()
-            if idx % 100 == 0:
-                print(f'{datetime.datetime.now()} | Iteration: {idx}/'
-                      f'{iterations_test} | Loss: {np.mean(cum_loss)} | '
-                      f'Confusion: {confusion_matrix}')
-        for segment_id in segment_ids[1:]:
-            auroc = area_under_roc(all_labels[segment_id],
-                                   all_preds[segment_id])
-            print(f'Area under Curve - ROC for Segement {segment_id} is '
-                  f'{auroc}.')
-        print('-' * 100)
+                all_preds[segment_id] = list()
+                all_labels[segment_id] = list()
+                confusion_matrix[segment_id] = [0, 0, 0, 0]
+            for idx, data in enumerate(zip(*dataloaders_test.values())):
+                segments_values = dict(zip(dataloaders_test.keys(), data))
+                predictions, loss = network_iteration(segments_values,
+                                                      predictions, models,
+                                                      single_evaluation_step,
+                                                      adjacent_segments,
+                                                      connected, batch_size,
+                                                      criterion, lr)
+                cum_loss.append([*loss.values()])
+                for segment_id in segment_ids[1:]:
+                    labels = segments_values[segment_id][1]
+                    preds = predictions[segment_id]
+                    all_preds[segment_id].append(preds)
+                    all_labels[segment_id].append(labels)
+                    tp, fp, tn, fn, = confusion(labels, preds, inc_threshold)
+                    confusion_matrix[segment_id] = np.add(
+                        confusion_matrix[segment_id],
+                        [tp, fp, tn, fn]).tolist()
+                if idx % 1000 == 0:
+                    print(f'{datetime.datetime.now()} | Iteration: {idx}/'
+                          f'{iterations_test}')
+            auroc = dict()
+            for segment_id in segment_ids[1:]:
+                auroc[segment_id] = area_under_roc(all_labels[segment_id],
+                                                   all_preds[segment_id])
+            # Write result to output csv
+            for segment_id in segment_ids[1:]:
+                writer.writerow(
+                    [segment_id, 'tp', confusion_matrix[segment_id][0],
+                     auroc[segment_id]])
+                writer.writerow(
+                    [segment_id, 'fp', confusion_matrix[segment_id][1],
+                     auroc[segment_id]])
+                writer.writerow(
+                    [segment_id, 'tn', confusion_matrix[segment_id][2],
+                     auroc[segment_id]])
+                writer.writerow(
+                    [segment_id, 'fn', confusion_matrix[segment_id][3],
+                     auroc[segment_id]])
+            print(f'Cumulative loss: {np.mean(cum_loss)}')
+            print('-' * 100)
 
 
 if __name__ == '__main__':
@@ -245,9 +267,11 @@ if __name__ == '__main__':
                         help='Directory of HDF5 training data')
     parser.add_argument('--test_dir', required=True, type=str,
                         help='Directory of HDF5 testing data')
+    parser.add_argument('--out_dir', default='results/', type=str,
+                        help='Directory of HDF5 testing data')
     parser.add_argument('--epochs', default=10, type=int,
                         help='Number of Epochs')
-    parser.add_argument('--batch_size', default=100, type=int,
+    parser.add_argument('--batch_size', default=32, type=int,
                         help='Batch Size')
     parser.add_argument('--lr', default=0.01, type=float,
                         help='Learning Rate')
@@ -257,7 +281,7 @@ if __name__ == '__main__':
                         help='Threshold for undersampling of training data')
     parser.add_argument('--inc_threshold', default=0.5, type=float,
                         help='Threshold for prediction to be an incident')
-    parser.add_argument('--connected', default=False, type=bool,
+    parser.add_argument('--connected', default=True, type=bool,
                         help='Network of Segments are training independently')
     parser.add_argument('--adjacency_matrix_csv', required=True, type=str,
                         help='csv adjacency matrix for Numerico segments')
