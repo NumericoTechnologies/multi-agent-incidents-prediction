@@ -16,11 +16,11 @@ import csv
 import torch.multiprocessing as multiprocessing
 import numpy as np
 
-from common_utils.general_utils import csv_to_df
-
 this_dir = os.path.abspath(os.path.dirname(__file__))
 projects_dir = os.path.dirname(this_dir)
 if projects_dir not in sys.path: sys.path.append(projects_dir)
+
+from common_utils.general_utils import csv_to_df
 
 
 class Net(nn.Module):
