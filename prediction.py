@@ -281,8 +281,9 @@ if __name__ == '__main__':
                         help='Threshold for undersampling of training data')
     parser.add_argument('--inc_threshold', default=0.5, type=float,
                         help='Threshold for prediction to be an incident')
-    parser.add_argument('--connected', default=True, type=bool,
-                        help='Network of Segments are training independently')
+    parser.add_argument('--connected', default=0, type=int,
+                        help='Network of Segments are connected during '
+                             'training')
     parser.add_argument('--adjacency_matrix_csv', required=True, type=str,
                         help='csv adjacency matrix for Numerico segments')
     args = parser.parse_args()
