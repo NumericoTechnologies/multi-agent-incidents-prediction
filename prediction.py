@@ -30,11 +30,12 @@ class Net(nn.Module):
         self.fc2 = nn.Linear(100, 100)
         self.fc3 = nn.Linear(100, 25)
         self.fc4 = nn.Linear(25, 1)
+        self.dropout = nn.Dropout(p=0.05)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        x = self.dropout(F.relu(self.fc1(x)))
+        x = self.dropout(F.relu(self.fc2(x)))
+        x = self.dropout(F.relu(self.fc3(x)))
         return torch.sigmoid(self.fc4(x))
 
 
@@ -126,10 +127,11 @@ def confusion(label, preds, inc_threshold):
     return true_positives, false_positives, true_negatives, false_negatives
 
 
-def agent_based_prediction(train_dir, test_dir, out_dir, epochs, batch_size,
-                           lr, sampling, sampling_rate, inc_threshold,
-                           connected, adjacency_matrix_csv):
+def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
+                           batch_size, lr, sampling, sampling_rate,
+                           inc_threshold, connected, adjacency_matrix_csv):
     os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
     segment_features = sorted([f for f in os.listdir(train_dir)])
     # define dictionaries for data, models, adjacent segments ...
     adjacency_matrix = csv_to_df(adjacency_matrix_csv, sep=',')
@@ -196,7 +198,6 @@ def agent_based_prediction(train_dir, test_dir, out_dir, epochs, batch_size,
             print(f'{datetime.datetime.now()} | Epoch: {epoch}/{epochs} | '
                   f'Iteration: {idx}/{iterations_train} | Loss: '
                   f'{np.mean([*loss.values()])}')
-            break
         print(f'Ratio of incident & non-incident: {np.mean(avg_list)}')
         # testing of the models
         print('-' * 100)
@@ -243,11 +244,11 @@ def agent_based_prediction(train_dir, test_dir, out_dir, epochs, batch_size,
                           f'{iterations_test} | Loss: {np.mean(cum_loss)}')
                     cum_loss = list()
         # Write result to output csv
+        out_cm_name = f'ConfusionMatrix_{datetime.datetime.now()}_epoch' \
+            f'{epoch}_batchsize{batch_size}_lr{lr}_sr{sampling_rate}' \
+            f'_connected{connected}.csv'
         with open(os.path.join(out_dir, out_cm_name), 'w',
                   newline='') as out_cm:
-            out_cm_name = f'ConfusionMatrix_{datetime.datetime.now()}_epoch' \
-                f'{epoch}_batchsize{batch_size}_lr{lr}_sr{sampling_rate}' \
-                f'_connected{connected}.csv'
             cm_writer = csv.writer(out_cm, delimiter='|')
             cm_writer.writerow(['segment_id', 'type', 'count'])
             for segment_id in segment_ids[1:]:
@@ -259,6 +260,14 @@ def agent_based_prediction(train_dir, test_dir, out_dir, epochs, batch_size,
                     [segment_id, 'tn', confusion_matrix[segment_id][2]])
                 cm_writer.writerow(
                     [segment_id, 'fn', confusion_matrix[segment_id][3]])
+        if epoch % 5 == 0:
+            print('Saving models for all segments.')
+            for segment_id in segment_ids[1:]:
+                model_name = f'{segment_id}_epoch{epoch}_batchsize' \
+                    f'{batch_size}_lr{lr}_sr{sampling_rate}_connected' \
+                    f'{connected}.pt'
+                torch.save(models[segment_id].state_dict(),
+                           os.path.join(model_dir, model_name))
         print('-' * 100)
 
 
@@ -270,7 +279,9 @@ if __name__ == '__main__':
     parser.add_argument('--test_dir', required=True, type=str,
                         help='Directory of HDF5 testing data')
     parser.add_argument('--out_dir', default='results/', type=str,
-                        help='Directory of HDF5 testing data')
+                        help='Directory of csv results')
+    parser.add_argument('--model_dir', default='models/', type=str,
+                        help='Directory of trained models')
     parser.add_argument('--epochs', default=10, type=int,
                         help='Number of Epochs')
     parser.add_argument('--batch_size', default=32, type=int,
@@ -279,7 +290,7 @@ if __name__ == '__main__':
                         help='Learning Rate')
     parser.add_argument('--sampling', default=True, type=bool,
                         help='Apply undersampling to the datasets')
-    parser.add_argument('--sampling_rate', default=0.01, type=float,
+    parser.add_argument('--sampling_rate', default=0.02, type=float,
                         help='Threshold for undersampling of training data')
     parser.add_argument('--inc_threshold', default=0.5, type=float,
                         help='Threshold for prediction to be an incident')
@@ -289,5 +300,6 @@ if __name__ == '__main__':
     parser.add_argument('--adjacency_matrix_csv', required=True, type=str,
                         help='csv adjacency matrix for Numerico segments')
     args = parser.parse_args()
+    print(args)
     kwargs_ = dict(vars(args))
     agent_based_prediction(**kwargs_)
