@@ -225,7 +225,7 @@ def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
                                                       adjacent_segments,
                                                       connected, batch_size,
                                                       criterion, lr)
-                cum_loss.append([*loss.values()])
+                cum_loss.append(np.mean([*loss.values()]))
                 # store all preds & labels in dict to write them to csv
                 preds_labels = dict()
                 for segment_id in segment_ids[1:]:
