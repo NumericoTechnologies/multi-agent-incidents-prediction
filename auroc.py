@@ -23,6 +23,7 @@ inc_df['auroc'] = None
 
 df_list = list()
 epoch_counter = 1
+# iterate over all pred_label files
 for pred_label_epoch in all_preds_labels:
     epoch_df = inc_df.copy()
     epoch_df['epoch'] = epoch_counter
@@ -30,15 +31,18 @@ for pred_label_epoch in all_preds_labels:
     # df for preds & labels of respective epoch
     pl_df = csv_to_df(input, sep=',')
     segments = list(pl_df)
+    # iterate over all different segment IDs
     for segment_id in segments:
         seg_df = pl_df[segment_id]
         segment_list = seg_df.tolist()
         predictions = list()
         labels = list()
         for segment in segment_list:
+            # string to list
             prediction, label = ast.literal_eval(segment)
             predictions.append(prediction)
             labels.append(label)
+        # remove 1 dimension to have all labels and preds within one list
         predictions = sum(predictions, [])
         labels = sum(labels, [])
         if sum(labels) == 0:
