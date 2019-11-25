@@ -127,9 +127,10 @@ def confusion(label, preds, inc_threshold):
     return true_positives, false_positives, true_negatives, false_negatives
 
 
-def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
-                           batch_size, lr, sampling, sampling_rate,
-                           inc_threshold, connected, adjacency_matrix_csv):
+def agent_based_prediction(train_dir, test_dir, out_dir, model_dir,
+                           restore_model_dir, epochs, batch_size, lr, sampling,
+                           sampling_rate, inc_threshold, connected,
+                           adjacency_matrix_csv):
     os.makedirs(out_dir, exist_ok=True)
     os.makedirs(model_dir, exist_ok=True)
     segment_features = sorted([f for f in os.listdir(train_dir)])
@@ -165,6 +166,14 @@ def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
             dataset=dataset_train, batch_size=batch_size, drop_last=True)
         dataloaders_test[segment_id] = torch.utils.data.DataLoader(
             dataset=dataset_test, batch_size=batch_size, drop_last=True)
+
+    # restore checkpoints for the models
+    if restore_model_dir:
+        model_paths = sorted([f for f in os.listdir(restore_model_dir)])
+        for model_path in model_paths:
+            segment_id = model_path.split('_')[0]
+            path = os.path.join(restore_model_dir, model_path)
+            models[segment_id].load_state_dict(torch.load(path))
 
     # get number of iterations for train & test
     iterations_train = dataloaders_train[
@@ -243,7 +252,7 @@ def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
                     print(f'{datetime.datetime.now()} | Iteration: {idx}/'
                           f'{iterations_test} | Loss: {np.mean(cum_loss)}')
                     cum_loss = list()
-        # Write result to output csv
+        # write result to output csv
         out_cm_name = f'ConfusionMatrix_{datetime.datetime.now()}_epoch' \
             f'{epoch}_batchsize{batch_size}_lr{lr}_sr{sampling_rate}' \
             f'_connected{connected}.csv'
@@ -260,6 +269,7 @@ def agent_based_prediction(train_dir, test_dir, out_dir, model_dir, epochs,
                     [segment_id, 'tn', confusion_matrix[segment_id][2]])
                 cm_writer.writerow(
                     [segment_id, 'fn', confusion_matrix[segment_id][3]])
+        # save models
         if epoch % 5 == 0:
             print('Saving models for all segments.')
             for segment_id in segment_ids[1:]:
@@ -282,6 +292,8 @@ if __name__ == '__main__':
                         help='Directory of csv results')
     parser.add_argument('--model_dir', default='models/', type=str,
                         help='Directory of trained models')
+    parser.add_argument('--restore_model_dir', default='', type=str,
+                        help='Directory of trained models for restoring')
     parser.add_argument('--epochs', default=10, type=int,
                         help='Number of Epochs')
     parser.add_argument('--batch_size', default=32, type=int,
